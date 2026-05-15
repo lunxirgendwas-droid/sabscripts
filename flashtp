@@ -1,0 +1,490 @@
+-- =============================================
+-- @t4mpo On Top !!!
+-- =============================================
+
+local Players              = game:GetService("Players")
+local UserInputService     = game:GetService("UserInputService")
+local RunService           = game:GetService("RunService")
+local TweenService         = game:GetService("TweenService")
+local ProximityPromptService = game:GetService("ProximityPromptService")
+
+local player    = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+local Camera    = workspace.CurrentCamera
+
+-- =============================================
+-- COULEURS (style hub)
+-- =============================================
+local C = {
+    Panel       = Color3.fromRGB(16, 18, 36),
+    MiniTitle   = Color3.fromRGB(20, 22, 48),
+    Border      = Color3.fromRGB(80, 60, 180),
+    AccentBright= Color3.fromRGB(160, 110, 255),
+    Accent      = Color3.fromRGB(120, 80, 220),
+    Text        = Color3.fromRGB(255, 255, 255),
+    TextDim     = Color3.fromRGB(200, 200, 225),
+    SectionTitle= Color3.fromRGB(160, 140, 220),
+    SectionBG   = Color3.fromRGB(18, 20, 42),
+    ButtonBG    = Color3.fromRGB(28, 30, 70),
+    ButtonBorder= Color3.fromRGB(60, 50, 140),
+    ButtonHover = Color3.fromRGB(50, 45, 120),
+    ToggleOn    = Color3.fromRGB(100, 180, 255),
+    ToggleOff   = Color3.fromRGB(35, 38, 70),
+    KnobOn      = Color3.fromRGB(255, 255, 255),
+    KnobOff     = Color3.fromRGB(180, 185, 210),
+    Ready       = Color3.fromRGB(80, 220, 100),
+    SliderTrack = Color3.fromRGB(28, 30, 70),
+    SliderFill  = Color3.fromRGB(100, 180, 255),
+}
+
+local function ci(class, props, parent)
+    local inst = Instance.new(class)
+    for k, v in pairs(props) do inst[k] = v end
+    if parent then inst.Parent = parent end
+    return inst
+end
+local function corner(p, r) Instance.new("UICorner", p).CornerRadius = UDim.new(0, r or 8) end
+local function stroke(p, col, th)
+    local s = Instance.new("UIStroke", p)
+    s.Color = col or C.Border; s.Thickness = th or 1; s.Transparency = 0.5
+    return s
+end
+local function tw(obj, props, dur)
+    TweenService:Create(obj, TweenInfo.new(dur or 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
+end
+
+-- =============================================
+-- LOGIQUE GAME STRETCHER (extrait du hub)
+-- =============================================
+local gsEnabled   = false
+local gsConn      = nil
+local gsResConn   = nil
+
+local function enableGameStretcher()
+    gsEnabled = true
+    if gsConn then gsConn:Disconnect() end
+    gsConn = RunService.RenderStepped:Connect(function()
+        if not gsEnabled then return end
+        local cam = workspace.CurrentCamera
+        if cam then cam.FieldOfView = 100 end
+    end)
+    if gsResConn then gsResConn:Disconnect() end
+    gsResConn = RunService.RenderStepped:Connect(function()
+        Camera.CFrame = Camera.CFrame * CFrame.new(0,0,0, 1,0,0, 0,0.7,0, 0,0,1)
+    end)
+end
+
+local function disableGameStretcher()
+    gsEnabled = false
+    if gsConn    then gsConn:Disconnect();    gsConn    = nil end
+    if gsResConn then gsResConn:Disconnect(); gsResConn = nil end
+    local cam = workspace.CurrentCamera
+    if cam then cam.FieldOfView = 70 end
+end
+
+-- =============================================
+-- LOGIQUE FLASH TP (extrait du hub / TEMPO_FLASH)
+-- =============================================
+local flashEnabled   = false
+local sliderValue    = 0.93
+local manualOverride = false
+local triggerBump    = false
+local activeTriggers = {}
+local ppsConn        = nil
+local hbConn         = nil
+local barFill        = nil
+
+local Z_THRESHOLD = 60
+local AimLocations = {
+    Right = {
+        {pos=Vector3.new(-330.7,-4.1,94.5),  aim=Vector3.new(-331.8,-5.0,91.1)},
+        {pos=Vector3.new(-322.7,-4.1,95.0),  aim=Vector3.new(-324.8,-5.7,91.1)},
+        {pos=Vector3.new(-316.5,-4.1,93.9),  aim=Vector3.new(-318.3,-4.9,91.1)},
+        {pos=Vector3.new(-308.1,-4.1,96.1),  aim=Vector3.new(-311.5,-7.1,91.1)},
+        {pos=Vector3.new(-301.5,-4.1,94.6),  aim=Vector3.new(-305.0,-6.0,91.1)},
+        {pos=Vector3.new(-329.3,13.8,97.0),  aim=Vector3.new(-329.9,10.4,95.3)},
+        {pos=Vector3.new(-322.5,13.8,97.2),  aim=Vector3.new(-323.0,10.4,95.3)},
+        {pos=Vector3.new(-315.1,13.8,97.3),  aim=Vector3.new(-315.6,10.4,95.7)},
+        {pos=Vector3.new(-307.0,13.8,96.8),  aim=Vector3.new(-307.7,10.4,95.2)},
+        {pos=Vector3.new(-299.4,13.8,96.5),  aim=Vector3.new(-300.3,10.4,94.8)},
+        {pos=Vector3.new(-329.8,30.8,93.2),  aim=Vector3.new(-329.8,35.1,91.1)},
+        {pos=Vector3.new(-323.5,30.8,93.2),  aim=Vector3.new(-323.5,34.6,91.1)},
+        {pos=Vector3.new(-315.8,30.9,94.1),  aim=Vector3.new(-315.8,35.2,91.1)},
+        {pos=Vector3.new(-304.9,30.8,95.8),  aim=Vector3.new(-306.9,28.0,94.0)},
+        {pos=Vector3.new(-299.5,30.9,93.9),  aim=Vector3.new(-303.4,26.9,92.0)},
+    },
+    Left = {
+        {pos=Vector3.new(-329.5,-4.2,24.2),  aim=Vector3.new(-331.5,-6.9,29.1)},
+        {pos=Vector3.new(-324.2,-4.1,23.6),  aim=Vector3.new(-327.6,-7.8,29.1)},
+        {pos=Vector3.new(-308.4,-4.1,24.4),  aim=Vector3.new(-307.5,-0.0,20.3)},
+        {pos=Vector3.new(-308.1,-4.1,25.4),  aim=Vector3.new(-309.7,-5.0,29.1)},
+        {pos=Vector3.new(-301.4,-4.1,25.8),  aim=Vector3.new(-302.1,-5.2,29.1)},
+        {pos=Vector3.new(-317.4,13.9,25.3),  aim=Vector3.new(-315.1,11.1,29.1)},
+        {pos=Vector3.new(-324.4,13.9,25.9),  aim=Vector3.new(-324.4,18.0,29.1)},
+        {pos=Vector3.new(-318.7,13.7,24.3),  aim=Vector3.new(-317.4,10.1,27.1)},
+        {pos=Vector3.new(-330.2,30.9,25.2),  aim=Vector3.new(-330.1,35.2,29.1)},
+        {pos=Vector3.new(-321.9,30.9,23.7),  aim=Vector3.new(-321.0,27.4,25.2)},
+    }
+}
+
+local function getPingBase()
+    local ping = 80
+    pcall(function() ping = player:GetNetworkPing() * 1000 end)
+    if ping <= 30 then return 0.91
+    elseif ping <= 70 then return 0.92
+    elseif ping <= 120 then return 0.93
+    else return 0.94 end
+end
+
+local function FindTool(key)
+    local bp = player:FindFirstChild("Backpack")
+    local ch = player.Character
+    if ch then for _,t in pairs(ch:GetChildren()) do
+        if t:IsA("Tool") and t.Name:lower():find(key:lower()) then return t end
+    end end
+    if bp then for _,t in pairs(bp:GetChildren()) do
+        if t:IsA("Tool") and t.Name:lower():find(key:lower()) then return t end
+    end end
+end
+
+local function PerformAlign(p, a)
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    local hum = player.Character and player.Character:FindFirstChild("Humanoid")
+    if not hrp or not hum then return end
+    local carpet = FindTool("flying")
+    if carpet then hum:EquipTool(carpet); task.wait(0.05) end
+    hrp.Velocity = Vector3.new(0,0,0)
+    hrp.CFrame = CFrame.new(p)
+    task.wait(0.1)
+    workspace.CurrentCamera.CFrame = CFrame.new(player.Character.Head.Position, a)
+end
+
+local function GetNearestPoint()
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+    local side = (hrp.Position.Z > Z_THRESHOLD) and AimLocations.Right or AimLocations.Left
+    local target, minDist = nil, math.huge
+    for _, pt in ipairs(side) do
+        local d = (hrp.Position - pt.pos).Magnitude
+        if d < minDist then minDist = d; target = pt end
+    end
+    return target
+end
+
+local function flashStart()
+    if ppsConn then ppsConn:Disconnect() end
+    ppsConn = ProximityPromptService.PromptButtonHoldBegan:Connect(function(prompt)
+        if not flashEnabled then return end
+        if activeTriggers[prompt] then return end
+        activeTriggers[prompt] = true
+        local start = os.clock()
+        local fired = false
+        local conn
+        conn = RunService.PreRender:Connect(function()
+            if not prompt or not prompt.Parent then
+                conn:Disconnect(); activeTriggers[prompt] = nil
+                if barFill then tw(barFill, {Size=UDim2.new(0,0,1,0)}, 0.3) end
+                return
+            end
+            local progress = math.clamp((os.clock()-start)/prompt.HoldDuration, 0, 1)
+            if barFill then barFill.Size = UDim2.new(progress,0,1,0) end
+            if not fired and progress >= sliderValue then
+                fired = true; conn:Disconnect(); activeTriggers[prompt] = nil
+                triggerBump = not triggerBump
+                local ch = player.Character
+                local tool = ch and ch:FindFirstChildOfClass("Tool")
+                if tool then tool:Activate() end
+                if barFill then
+                    barFill.Size = UDim2.new(1,0,1,0)
+                    task.delay(0.2, function()
+                        tw(barFill, {Size=UDim2.new(0,0,1,0)}, 0.4)
+                    end)
+                end
+            end
+        end)
+        prompt.PromptButtonHoldEnded:Connect(function()
+            if not fired then
+                conn:Disconnect(); activeTriggers[prompt] = nil
+                if barFill then tw(barFill, {Size=UDim2.new(0,0,1,0)}, 0.3) end
+            end
+        end)
+    end)
+
+    if hbConn then hbConn:Disconnect() end
+    hbConn = RunService.Heartbeat:Connect(function()
+        if not manualOverride then
+            local base = getPingBase()
+            sliderValue = triggerBump and base+0.01 or base
+        end
+    end)
+end
+
+local function flashStop()
+    if ppsConn then ppsConn:Disconnect(); ppsConn = nil end
+    if hbConn  then hbConn:Disconnect();  hbConn  = nil end
+    activeTriggers = {}
+    if barFill then tw(barFill, {Size=UDim2.new(0,0,1,0)}, 0.3) end
+end
+
+-- =============================================
+-- BARRE DE PROGRESSION (ScreenGui séparé)
+-- =============================================
+local barGui = Instance.new("ScreenGui")
+barGui.Name = "FlashTPBar"; barGui.ResetOnSpawn = false; barGui.DisplayOrder = 997
+barGui.Parent = playerGui
+
+local bg = ci("Frame", {
+    Size=UDim2.new(0,220,0,16), Position=UDim2.new(0.5,-110,1,-28),
+    BackgroundColor3=Color3.fromRGB(0,0,0), BackgroundTransparency=0,
+    BorderSizePixel=0,
+}, barGui)
+corner(bg, 6)
+stroke(bg, C.Border, 1.5)
+
+local inner = ci("Frame", {
+    Size=UDim2.new(1,-8,1,-6), Position=UDim2.new(0,4,0,3),
+    BackgroundColor3=Color3.fromRGB(15,15,15), BorderSizePixel=0,
+}, bg)
+corner(inner, 8)
+
+barFill = ci("Frame", {
+    Name="Fill", Size=UDim2.new(0,0,1,0),
+    BackgroundColor3=C.AccentBright, BorderSizePixel=0,
+}, inner)
+corner(barFill, 8)
+
+-- =============================================
+-- PANEL PRINCIPAL (style hub)
+-- =============================================
+local sg = Instance.new("ScreenGui")
+sg.Name="FlashTPPanel"; sg.ResetOnSpawn=false; sg.DisplayOrder=999; sg.Parent=playerGui
+
+local panel = ci("Frame", {
+    Size=UDim2.new(0,260,0,0), Position=UDim2.new(0.5,-130,0.3,0),
+    AutomaticSize=Enum.AutomaticSize.Y,
+    BackgroundColor3=C.Panel, BackgroundTransparency=0.02,
+    BorderSizePixel=0, Active=true, Draggable=true, ClipsDescendants=true,
+}, sg)
+corner(panel, 12)
+stroke(panel, C.Border, 1.5)
+
+-- TitleBar
+local titleBar = ci("Frame", {
+    Size=UDim2.new(1,0,0,30), BackgroundColor3=C.MiniTitle, BorderSizePixel=0,
+}, panel)
+corner(titleBar, 12)
+
+ci("TextLabel", {
+    Size=UDim2.new(1,-40,1,0), Position=UDim2.new(0,10,0,0),
+    BackgroundTransparency=1, Text="Flash TP",
+    Font=Enum.Font.GothamBold, TextColor3=C.Text, TextSize=12,
+    TextXAlignment=Enum.TextXAlignment.Left,
+}, titleBar)
+
+-- Minimize
+local minimized = false
+local contentFrame
+local minBtn = ci("TextButton", {
+    Size=UDim2.new(0,22,0,22), Position=UDim2.new(1,-30,0.5,-11),
+    BackgroundTransparency=1, Text="—", Font=Enum.Font.GothamBold,
+    TextColor3=C.AccentBright, TextSize=14,
+}, titleBar)
+
+-- Content
+contentFrame = ci("Frame", {
+    Name="Content", Size=UDim2.new(1,0,0,0), Position=UDim2.new(0,0,0,30),
+    AutomaticSize=Enum.AutomaticSize.Y, BackgroundTransparency=1,
+}, panel)
+local pad = Instance.new("UIPadding", contentFrame)
+pad.PaddingTop=UDim.new(0,6); pad.PaddingBottom=UDim.new(0,10)
+pad.PaddingLeft=UDim.new(0,10); pad.PaddingRight=UDim.new(0,10)
+local layout = Instance.new("UIListLayout", contentFrame)
+layout.SortOrder=Enum.SortOrder.LayoutOrder; layout.Padding=UDim.new(0,5)
+
+minBtn.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    if minimized then
+        tw(contentFrame, {Position=UDim2.new(0,0,0,-contentFrame.AbsoluteSize.Y)}, 0.22)
+        task.delay(0.22, function()
+            contentFrame.Visible=false
+            tw(panel, {Size=UDim2.new(0,260,0,30)}, 0.15)
+        end)
+    else
+        tw(panel, {Size=UDim2.new(0,260,0,0)}, 0.15)
+        contentFrame.Visible=true
+        contentFrame.Position=UDim2.new(0,0,0,-contentFrame.AbsoluteSize.Y)
+        tw(contentFrame, {Position=UDim2.new(0,0,0,30)}, 0.22)
+    end
+end)
+
+-- ── Helper: toggle row ──
+local function makeToggle(labelTxt, order, initOn, onChange)
+    local row = ci("Frame", {
+        Size=UDim2.new(1,0,0,30), BackgroundColor3=C.SectionBG,
+        BackgroundTransparency=0.3, BorderSizePixel=0, LayoutOrder=order,
+    }, contentFrame)
+    corner(row, 6)
+
+    ci("TextLabel", {
+        Size=UDim2.new(1,-52,1,0), Position=UDim2.new(0,8,0,0),
+        BackgroundTransparency=1, Text=labelTxt,
+        Font=Enum.Font.GothamMedium, TextColor3=C.Text, TextSize=12,
+        TextXAlignment=Enum.TextXAlignment.Left,
+    }, row)
+
+    local sw = ci("Frame", {
+        Name="Switch", Size=UDim2.new(0,36,0,18), Position=UDim2.new(1,-44,0.5,-9),
+        BackgroundColor3=initOn and C.ToggleOn or C.ToggleOff, BorderSizePixel=0,
+    }, row)
+    corner(sw, 9)
+    stroke(sw, Color3.fromRGB(50,40,110), 1)
+
+    local knob = ci("Frame", {
+        Size=UDim2.new(0,14,0,14),
+        Position=initOn and UDim2.new(1,-16,0.5,-7) or UDim2.new(0,2,0.5,-7),
+        BackgroundColor3=initOn and C.KnobOn or C.KnobOff, BorderSizePixel=0,
+    }, sw)
+    corner(knob, 7)
+
+    local on = initOn
+    local btn = ci("TextButton", {Size=UDim2.new(1,0,1,0), BackgroundTransparency=1, Text="", ZIndex=5}, sw)
+    btn.MouseButton1Click:Connect(function()
+        on = not on
+        tw(sw, {BackgroundColor3=on and C.ToggleOn or C.ToggleOff}, 0.12)
+        tw(knob, {
+            Position=on and UDim2.new(1,-16,0.5,-7) or UDim2.new(0,2,0.5,-7),
+            BackgroundColor3=on and C.KnobOn or C.KnobOff,
+        }, 0.12)
+        onChange(on)
+    end)
+    return row
+end
+
+-- ── Helper: bouton ──
+local function makeBtn(labelTxt, order)
+    local btn = ci("TextButton", {
+        Size=UDim2.new(1,0,0,30), BackgroundColor3=C.ButtonBG,
+        BorderSizePixel=0, Text=labelTxt,
+        Font=Enum.Font.GothamMedium, TextColor3=C.Text,
+        TextSize=11, AutoButtonColor=false, LayoutOrder=order,
+    }, contentFrame)
+    corner(btn, 6)
+    stroke(btn, C.ButtonBorder, 1)
+    btn.MouseEnter:Connect(function() tw(btn, {BackgroundColor3=C.ButtonHover}, 0.12) end)
+    btn.MouseLeave:Connect(function() tw(btn, {BackgroundColor3=C.ButtonBG}, 0.12) end)
+    btn.MouseButton1Click:Connect(function()
+        tw(btn, {BackgroundColor3=C.Accent}, 0.07)
+        task.delay(0.12, function() tw(btn, {BackgroundColor3=C.ButtonBG}, 0.12) end)
+    end)
+    return btn
+end
+
+-- ── Helper: slider ──
+local function makeSlider(labelTxt, min, max, default, order, onChange)
+    local container = ci("Frame", {
+        Size=UDim2.new(1,0,0,38), BackgroundTransparency=1, LayoutOrder=order,
+    }, contentFrame)
+
+    ci("TextLabel", {
+        Size=UDim2.new(0.55,0,0,16), Position=UDim2.new(0,4,0,0),
+        BackgroundTransparency=1, Text=labelTxt,
+        Font=Enum.Font.GothamMedium, TextColor3=C.Text, TextSize=11,
+        TextXAlignment=Enum.TextXAlignment.Left,
+    }, container)
+
+    local valLbl = ci("TextLabel", {
+        Size=UDim2.new(0.4,0,0,16), Position=UDim2.new(0.6,0,0,0),
+        BackgroundColor3=Color3.fromRGB(28,30,70), BackgroundTransparency=0.3,
+        Text=tostring(default), Font=Enum.Font.GothamBold,
+        TextColor3=C.AccentBright, TextSize=11, TextXAlignment=Enum.TextXAlignment.Center,
+        BorderSizePixel=0,
+    }, container)
+    corner(valLbl, 4)
+
+    local track = ci("Frame", {
+        Size=UDim2.new(1,-8,0,8), Position=UDim2.new(0,4,0,22),
+        BackgroundColor3=C.SliderTrack, BorderSizePixel=0,
+    }, container)
+    corner(track, 4)
+
+    local pct = (default-min)/(max-min)
+    local fill = ci("Frame", {Size=UDim2.new(pct,0,1,0), BackgroundColor3=C.SliderFill, BorderSizePixel=0}, track)
+    corner(fill, 4)
+
+    local kn = ci("Frame", {
+        Size=UDim2.new(0,14,0,14), Position=UDim2.new(pct,-7,0.5,-7),
+        BackgroundColor3=Color3.fromRGB(255,255,255), BorderSizePixel=0, ZIndex=3,
+    }, track)
+    corner(kn, 7)
+    stroke(kn, C.AccentBright, 1.5)
+
+    local cur = default
+    local dragging = false
+
+    local function setValue(v)
+        cur = math.clamp(v, min, max)
+        local r = (cur-min)/(max-min)
+        valLbl.Text = tostring(cur)
+        fill.Size = UDim2.new(r,0,1,0)
+        kn.Position = UDim2.new(r,-7,0.5,-7)
+        onChange(cur)
+    end
+
+    local dragBtn = ci("TextButton", {
+        Size=UDim2.new(1,10,1,10), Position=UDim2.new(0,-5,0,-5),
+        BackgroundTransparency=1, Text="", ZIndex=5,
+    }, track)
+    dragBtn.MouseButton1Down:Connect(function() dragging=true end)
+    UserInputService.InputEnded:Connect(function(i)
+        if i.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end
+    end)
+    UserInputService.InputChanged:Connect(function(i)
+        if not dragging then return end
+        if i.UserInputType==Enum.UserInputType.MouseMovement then
+            local r = math.clamp((i.Position.X-track.AbsolutePosition.X)/track.AbsoluteSize.X, 0, 1)
+            setValue(math.floor(min+(max-min)*r))
+        end
+    end)
+
+    setValue(cur)
+    return { Set=setValue, Get=function() return cur end }
+end
+
+-- ── Séparateur section ──
+local function makeSectionLbl(txt, order)
+    ci("TextLabel", {
+        Size=UDim2.new(1,0,0,16), BackgroundTransparency=1, Text=txt,
+        Font=Enum.Font.GothamBold, TextSize=10, TextColor3=C.SectionTitle,
+        TextXAlignment=Enum.TextXAlignment.Left, LayoutOrder=order,
+    }, contentFrame)
+end
+
+-- =============================================
+-- CONSTRUCTION DU PANEL
+-- =============================================
+
+-- Section Flash TP
+makeSectionLbl("FLASH TP", 1)
+
+makeToggle("Flash TP", 2, false, function(state)
+    flashEnabled = state
+    if state then flashStart() else flashStop() end
+end)
+
+local sliderObj = makeSlider("Trigger %", 85, 99, 93, 3, function(val)
+    sliderValue = val / 100
+    manualOverride = true
+end)
+
+local autoPosBtn = makeBtn("Auto Position", 4)
+autoPosBtn.MouseButton1Click:Connect(function()
+    local pt = GetNearestPoint()
+    if pt then PerformAlign(pt.pos, pt.aim) end
+end)
+
+-- Section Game Stretcher
+makeSectionLbl("GAME STRETCHER", 5)
+
+makeToggle("Game Stretcher", 6, false, function(state)
+    if state then enableGameStretcher() else disableGameStretcher() end
+end)
